@@ -8,3 +8,4 @@ def save_to_db(temp, hum):
     conn.commit()
     cursor.close()
     conn.close()
+    

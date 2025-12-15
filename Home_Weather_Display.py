@@ -41,6 +41,7 @@ from grovepi import *
 from grove_rgb_lcd import *
 from time import sleep
 from math import isnan
+import pymysql
 
 dht_sensor_port = 7 # connect the DHt sensor to port 7
 dht_sensor_type = 0 # use 0 for the blue-colored sensor and 1 for the white-colored sensor
@@ -50,36 +51,66 @@ dht_sensor_type = 0 # use 0 for the blue-colored sensor and 1 for the white-colo
 # setting the backlight color once reduces the amount of data transfer over the I2C line
 setRGB(0,255,0)
 
+def get_connection():
+    return pymysql.connect(
+        host="localhost",
+        user="adm_user",
+        password="1228",
+        database="ProyectoMDS2025"
+    )
+
+def save_to_db(temp, hum):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO weather (temperature, humidity) VALUES (%s, %s)",
+        (temp, hum)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def read_last_data():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT temperature, humidity FROM weather ORDER BY id DESC LIMIT 1"
+    )
+    data = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return data
+
+
 while True:
-	try:
-        # get the temperature and Humidity from the DHT sensor
-		[ temp,hum ] = dht(dht_sensor_port,dht_sensor_type)
-		print("temp =", temp, "C\thumidity =", hum,"%")
+    try:
+        # Leer sensor DHT
+        [temp, hum] = dht(dht_sensor_port, dht_sensor_type)
+        print("Temp =", temp, "C | Hum =", hum, "%")
 
-		# check if we have nans
-		# if so, then raise a type error exception
-		if isnan(temp) is True or isnan(hum) is True:
-			raise TypeError('nan error')
+        # Verificar valores inválidos
+        if isnan(temp) or isnan(hum):
+            raise TypeError("NaN error")
 
-		t = str(temp)
-		h = str(hum)
+        # Guardar en MariaDB
+        save_to_db(temp, hum)
 
-        # instead of inserting a bunch of whitespace, we can just insert a \n
-        # we're ensuring that if we get some strange strings on one line, the 2nd one won't be affected
-		setText_norefresh("Temp:" + t + "C\n" + "Humidity :" + h + "%")
+        # Leer último dato de la BD
+        t, h = read_last_data()
 
-	except (IOError, TypeError) as e:
-		print(str(e))
-		# and since we got a type error
-		# then reset the LCD's text
-		setText("")
+        # Mostrar en la LCD
+        setText_norefresh(
+            f"Temp: {t:.1f} C\nHumidity: {h:.1f} %"
+        )
 
-	except KeyboardInterrupt as e:
-		print(str(e))
-		# since we're exiting the program
-		# it's better to leave the LCD with a blank text
-		setText("")
-		break
+    except (IOError, TypeError) as e:
+        print("Error:", e)
+        setText("")
 
-	# wait some time before re-updating the LCD
-	sleep(0.05)
+    except KeyboardInterrupt:
+        print("Programa detenido")
+        setText("")
+        break
+
+    # Espera entre lecturas (recomendado para BD)
+    sleep(5)
